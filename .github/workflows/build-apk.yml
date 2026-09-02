@@ -44,7 +44,10 @@ jobs:
         uses: actions/checkout@v4
 
       # Node 22, no 20: el CLI de Capacitor 8 corta con
-      # "The Capacitor CLI requires NodeJS >=22.0.0" y el build muere en .
+      # "The Capacitor CLI requires NodeJS >=22.0.0" y el build muere en "cap add android".
+      #
+      # typescript va en devDependencies por la misma familia de problema: sin el, el CLI
+      # no puede leer capacitor.config.ts y corta con "Could not find installation of TypeScript".
       - name: Node 22
         uses: actions/setup-node@v4
         with:
