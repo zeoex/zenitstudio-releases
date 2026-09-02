@@ -54,11 +54,13 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      - name: Java 17 (Temurin)
+      # Java 21, no 17: Capacitor 8 compila sus modulos con source release 21 y Gradle
+      # corta con "invalid source release: 21" en :capacitor-android:compileReleaseJavaWithJavac.
+      - name: Java 21 (Temurin)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Android SDK
         uses: android-actions/setup-android@v3
