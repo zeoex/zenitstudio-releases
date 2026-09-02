@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ZenitStudio</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+      background: #09090B;
+      color: #e2e8f0;
+      display: grid;
+      place-items: center;
+      padding: 24px calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));
+      text-align: center;
+    }
+    .card { max-width: 340px; }
+    .logo {
+      width: 88px; height: 88px; border-radius: 22px;
+      margin: 0 auto 22px; display: grid; place-items: center;
+      background: rgba(212,175,55,.12);
+      border: 1px solid rgba(212,175,55,.35);
+    }
+    .logo svg { width: 44px; height: 44px; stroke: #D4AF37; }
+    h1 { font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
+    p { font-size: 14px; line-height: 1.55; color: #94a3b8; margin-top: 10px; }
+    button {
+      margin-top: 24px; width: 100%; height: 48px; border: 0; border-radius: 14px;
+      background: #D4AF37; color: #09090B; font-size: 15px; font-weight: 700;
+      cursor: pointer;
+    }
+    button:active { background: #b8952f; }
+    .estado { margin-top: 16px; font-size: 12px; color: #64748b; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><line x1="20" y1="4" x2="8.12" y2="15.88" /><line x1="14.47" y1="14.48" x2="20" y2="20" /><line x1="8.12" y1="8.12" x2="12" y2="12" />
+      </svg>
+    </div>
+    <h1>Sin conexión</h1>
+    <p>No pudimos conectar con el servidor de ZenitStudio. Revisá tu conexión a internet e intentá de nuevo.</p>
+    <button id="reintentar" type="button">Reintentar</button>
+    <div class="estado" id="estado"></div>
+  </main>
+
+  <script>
+    // La app real vive en el servidor remoto (capacitor.config -> server.url). Esta
+    // pantalla solo aparece si el WebView no pudo cargarla (server.errorPath).
+    //
+    // Cuando aparece, la página cargada es ESTE archivo local, así que `location.reload()`
+    // recargaría el cartel de error para siempre: hay que navegar a la URL remota.
+    // El placeholder lo reemplaza el CI después de `cap sync`, leyendo la URL ya resuelta
+    // del propio capacitor.config.json, para no repetir el dominio en otro archivo más.
+    var DESTINO = '__APP_START_URL__';
+    var estado = document.getElementById('estado');
+
+    function reintentar() {
+      estado.textContent = 'Reconectando…';
+      // Si el CI no reemplazó el placeholder, recargar es lo único sensato que queda.
+      if (DESTINO.indexOf('__APP_START') === 0) location.reload();
+      else location.replace(DESTINO);
+    }
+
+    document.getElementById('reintentar').addEventListener('click', reintentar);
+    window.addEventListener('online', reintentar);
+    // Reintento automático, pero solo mientras el sistema diga que hay red: sin esto son
+    // navegaciones fallidas cada 6 segundos, con el celular sin señal en un sótano.
+    setInterval(function () {
+      if (navigator.onLine) reintentar();
+    }, 6000);
+  </script>
+</body>
+</html>

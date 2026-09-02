@@ -1,0 +1,241 @@
+name: Compilar y publicar APK
+
+# Compila el shell Android de ZenitStudio (Capacitor cargando https://zenitstudio.evopos.com.ar)
+# y publica la APK en las Releases de ESTE repo, que es publico: por eso el link de
+# descarga funciona sin sesion.
+#
+# Se dispara de dos formas:
+#   1. Empujando un tag de version:  git tag v1.0.0 && git push origin v1.0.0
+#   2. A mano desde la pestaña Actions (workflow_dispatch), indicando la version.
+#
+# Secrets necesarios para una APK firmada y ACTUALIZABLE (Settings -> Secrets -> Actions):
+#   ANDROID_KEYSTORE_BASE64   -> keystore .jks en base64
+#   ANDROID_KEYSTORE_PASSWORD -> contraseña del keystore
+#   ANDROID_KEY_ALIAS         -> alias de la clave
+#   ANDROID_KEY_PASSWORD      -> contraseña de la clave
+#
+# Sin esos secrets se compila una APK debug: se instala igual y se ve identica, pero esta
+# firmada con otra clave, asi que Android despues RECHAZA la actualizacion y hay que
+# desinstalar a mano en cada celular. Por eso a Releases solo sube la firmada.
+#
+# No hace falta ningun PAT: el shell no tiene codigo propio, vive en este repo publico,
+# y GITHUB_TOKEN alcanza para publicar una release aca mismo.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (ej: 1.0.0). Vacio = 0.0.<run_number>'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Calcular version
+        id: ver
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="0.0.${{ github.run_number }}"
+          fi
+          # versionCode entero y monotono a partir del semver: MAJOR*10000 + MINOR*100 + PATCH
+          IFS='.' read -r MA MI PA <<< "$VERSION"
+          MA=${MA:-0}; MI=${MI:-0}; PA=${PA:-0}
+          VERSION_CODE=$(( MA * 10000 + MI * 100 + PA ))
+          [ "$VERSION_CODE" -le 0 ] && VERSION_CODE=${{ github.run_number }}
+          echo "version=$VERSION"           >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "Version $VERSION (code $VERSION_CODE)"
+
+      - name: Generar proyecto Android (Capacitor)
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      # Sin este archivo, el plugin de push compila igual pero el dispositivo nunca obtiene
+      # un token de FCM: la app queda muda y el build no dice nada.
+      - name: Instalar google-services.json
+        run: |
+          cp google-services.json android/app/google-services.json
+          PKG=$(node -p "require('./google-services.json').client[0].client_info.android_client_info.package_name")
+          APPID=$(node -p "require('./android/app/src/main/assets/capacitor.config.json').appId")
+          if [ "$PKG" != "$APPID" ]; then
+            echo "::error::El paquete de google-services.json ($PKG) no coincide con el appId de Capacitor ($APPID). FCM no entregaria nada."
+            exit 1
+          fi
+          echo "google-services.json instalado para $PKG"
+
+      # La pantalla "sin conexion" es un archivo local, asi que su boton no puede recargar:
+      # tiene que navegar a la URL remota. Se inyecta aca, leyendola de la config ya
+      # resuelta por Capacitor, para no tener el dominio escrito en un archivo mas.
+      - name: Inyectar la URL en la pantalla sin conexion
+        run: |
+          ASSETS=android/app/src/main/assets
+          URL=$(node -p "require('./$ASSETS/capacitor.config.json').server.url")
+          if [ -z "$URL" ] || [ "$URL" = "undefined" ]; then
+            echo "::error::No se pudo leer server.url de capacitor.config.json"
+            exit 1
+          fi
+          sed -i "s|__APP_START_URL__|$URL|g" "$ASSETS/public/index.html"
+          grep -q "$URL" "$ASSETS/public/index.html" && echo "Fallback offline apunta a $URL"
+
+      # Permisos que la app necesita. android/ se genera en cada build y no se versiona,
+      # asi que se inyectan aca.
+      #
+      #   POST_NOTIFICATIONS -> desde Android 13 hay que pedirlo para MOSTRAR notificaciones.
+      #     Sin el, FCM entrega el mensaje y el sistema lo descarta en silencio: es
+      #     exactamente el sintoma de "no me llegan los avisos" sin ningun error a la vista.
+      #   REQUEST_INSTALL_PACKAGES -> abrir el instalador para actualizarse sin salir al
+      #     navegador. Obligatorio desde Android 8.
+      - name: Declarar los permisos de la app
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          python3 - "$MANIFEST" <<'PY'
+          import sys
+          ruta = sys.argv[1]
+          permisos = [
+              'android.permission.POST_NOTIFICATIONS',
+              'android.permission.REQUEST_INSTALL_PACKAGES',
+          ]
+          xml = open(ruta, encoding='utf-8').read()
+          faltantes = [p for p in permisos if p not in xml]
+          if faltantes:
+              bloque = '\n    '.join(f'<uses-permission android:name="{p}" />' for p in faltantes)
+              xml = xml.replace('<application', bloque + '\n\n    <application', 1)
+              open(ruta, 'w', encoding='utf-8').write(xml)
+          print('Agregados:', ', '.join(faltantes) if faltantes else 'ninguno (ya estaban)')
+          PY
+          # Si el reemplazo no engancho, la app falla en silencio en el celular y nadie
+          # entiende por que. Mejor cortar el build aca.
+          for P in POST_NOTIFICATIONS REQUEST_INSTALL_PACKAGES; do
+            grep -q "$P" "$MANIFEST" || {
+              echo "::error::No se pudo agregar $P al AndroidManifest"
+              exit 1
+            }
+          done
+          echo "Permisos presentes en el manifest"
+
+      - name: Aplicar version al build.gradle
+        run: |
+          GRADLE=android/app/build.gradle
+          sed -i "s/versionCode [0-9]\+/versionCode ${{ steps.ver.outputs.version_code }}/" "$GRADLE"
+          sed -i "s/versionName \"[^\"]*\"/versionName \"${{ steps.ver.outputs.version }}\"/" "$GRADLE"
+          grep -E "versionCode|versionName" "$GRADLE"
+
+      # Va sin continue-on-error a proposito: si esto falla, la APK sale con el icono
+      # generico de Capacitor y nadie se entera hasta verlo en el celular.
+      #
+      # NO puede existir assets/icon.png ni assets/logo.png: @capacitor/assets los toma como
+      # "logo" y regenera el icono adaptativo A SANGRE, pisando el foreground centrado en la
+      # zona segura. El build igual termina en verde y el recorte se ve recien instalado.
+      - name: Generar iconos de la app
+        run: |
+          for f in icon-only icon-foreground icon-background splash splash-dark; do
+            [ -f "assets/$f.png" ] || { echo "::error::Falta assets/$f.png"; exit 1; }
+          done
+          if [ -f assets/icon.png ] || [ -f assets/logo.png ]; then
+            echo "::error::assets/icon.png (o logo.png) pisa el icono adaptativo con la version a sangre. Usa icon-only.png."
+            exit 1
+          fi
+          npx @capacitor/assets generate --android \
+            --iconBackgroundColor '#070707' \
+            --iconBackgroundColorDark '#070707'
+
+      - name: Compilar APK
+        id: build
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PW: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cd android
+          if [ -n "$KS_B64" ]; then
+            echo "-> Compilando release firmada con keystore propio"
+            echo "$KS_B64" | base64 -d > keystore.jks
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file="$(pwd)/keystore.jks" \
+              -Pandroid.injected.signing.store.password="$KS_PW" \
+              -Pandroid.injected.signing.key.alias="$KS_ALIAS" \
+              -Pandroid.injected.signing.key.password="$KEY_PW"
+            rm -f keystore.jks
+            echo "apk=android/app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_OUTPUT"
+            echo "firmada=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "-> Sin keystore: compilando APK debug de prueba (no actualizable)"
+            ./gradlew assembleDebug
+            echo "apk=android/app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_OUTPUT"
+            echo "firmada=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Renombrar APK
+        run: |
+          mkdir -p dist
+          cp "${{ steps.build.outputs.apk }}" "dist/zenitstudio-v${{ steps.ver.outputs.version }}.apk"
+          ls -lh dist
+
+      # El artefacto se sube ANTES de publicar: si la publicacion falla, la APK ya
+      # compilada sigue estando y se publica a mano sin volver a esperar el build.
+      - name: Subir APK como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: zenitstudio-apk
+          path: dist/*.apk
+          if-no-files-found: error
+
+      - name: Publicar en Releases
+        if: steps.build.outputs.firmada == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: ZenitStudio v${{ steps.ver.outputs.version }}
+          body: |
+            APK de ZenitStudio para el barbero.
+
+            **Instalacion:** descargá el `.apk`, abrilo en el celular y permití instalar
+            desde origenes desconocidos si Android lo pide. La primera vez te va a pedir
+            permiso para enviarte notificaciones: hay que aceptarlo, si no los avisos de
+            turnos y mensajes no aparecen.
+
+            Las pantallas y los datos se actualizan solos al abrir la app. Esta descarga
+            solo hace falta cuando cambia la app nativa.
+          files: dist/*.apk
+          fail_on_unmatched_files: true
+
+      - name: Aviso si la APK no se publico
+        if: steps.build.outputs.firmada != 'true'
+        run: |
+          echo "::warning::APK DEBUG: no se publico en Releases. Falta ANDROID_KEYSTORE_BASE64. Quedo como artefacto de este run, solo para probar."

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "990054468545",
+    "project_id": "zenit-816f1",
+    "storage_bucket": "zenit-816f1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:990054468545:android:2eb21576d5904781ba3d40",
+        "android_client_info": {
+          "package_name": "com.zenitstudio.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCi1tB6hI0NEXE__0muUZjbGYiLDSd3Eks"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

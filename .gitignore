@@ -1,0 +1,8 @@
+node_modules/
+# android/ se genera en cada build con `cap add android`. Versionarlo solo trae
+# conflictos y config vieja: lo que hay que versionar son capacitor.config.ts,
+# assets/ y el workflow.
+android/
+dist/
+*.jks
+*.keystore
