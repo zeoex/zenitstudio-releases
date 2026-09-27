@@ -14,9 +14,16 @@ import type { CapacitorConfig } from '@capacitor/cli';
  *
  * El dominio queda GRABADO en la APK. Si algun dia cambia, todas las instalaciones
  * siguen apuntando al viejo y hay que repartir una nueva.
+ *
+ * Ya paso una vez: hasta la v1.0.1 abria zenitstudio.evopos.com.ar (el servidor viejo).
+ * Desde la v1.1.0 abre el subdominio de Zenit Studio en Sillon Barber, que corre en
+ * Railway. Las instalaciones viejas siguen yendo al dominio viejo —que reenvia a Railway—
+ * hasta que se actualizan desde el aviso que les muestra el panel del barbero; recien
+ * cuando no quede ninguna se puede apagar ese reenvio. Al actualizar, el barbero entra una
+ * vez con su usuario: la sesion del dominio viejo no pasa al nuevo.
  */
 
-const APP_URL = 'https://zenitstudio.evopos.com.ar';
+const APP_URL = 'https://zenit-studio.sillonbarber.com.ar';
 const HOST = APP_URL.replace(/^https?:\/\//, '');
 
 const config: CapacitorConfig = {

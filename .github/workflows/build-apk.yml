@@ -1,6 +1,6 @@
 name: Compilar y publicar APK
 
-# Compila el shell Android de ZenitStudio (Capacitor cargando https://zenitstudio.evopos.com.ar)
+# Compila el shell Android de ZenitStudio (Capacitor cargando https://zenit-studio.sillonbarber.com.ar)
 # y publica la APK en las Releases de ESTE repo, que es publico: por eso el link de
 # descarga funciona sin sesion.
 #

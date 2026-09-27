@@ -12,8 +12,9 @@ Android descarta los avisos de turnos y mensajes en silencio.
 
 ## Qué es esta app
 
-Un envoltorio que abre `https://zenitstudio.evopos.com.ar/barbero` en pantalla completa y le
-suma notificaciones nativas. No empaqueta el sitio, así que:
+Un envoltorio que abre `https://zenit-studio.sillonbarber.com.ar/barbero` (el panel del
+barbero de Zenit Studio en Sillón Barber) en pantalla completa y le suma notificaciones
+nativas. Hasta la v1.0.1 abría el dominio viejo, `zenitstudio.evopos.com.ar`. No empaqueta el sitio, así que:
 
 - **El contenido se actualiza solo.** Pantallas, lógica y datos llegan con cada deploy de la
   web. Nadie reinstala nada.
